@@ -1,4 +1,5 @@
 import ast
+import builtins
 import io
 import json
 import re
@@ -226,7 +227,116 @@ def _repair_python_goal_logic(
             )
         )
 
+    defined_names = {
+        node.id
+        for node in nodes
+        if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Store)
+    }
+    defined_names.update(
+        node.name
+        for node in nodes
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))
+    )
+    defined_names.update(
+        argument.arg
+        for node in nodes
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda))
+        for argument in (*node.args.posonlyargs, *node.args.args, *node.args.kwonlyargs)
+    )
+    for node in nodes:
+        if isinstance(node, ast.Import):
+            defined_names.update(alias.asname or alias.name.split(".")[0] for alias in node.names)
+        elif isinstance(node, ast.ImportFrom):
+            defined_names.update(alias.asname or alias.name for alias in node.names)
+
+    undefined_names = {
+        node.id
+        for node in nodes
+        if isinstance(node, ast.Name)
+        and isinstance(node.ctx, ast.Load)
+        and node.id not in defined_names
+        and not hasattr(builtins, node.id)
+    }
+    average_goal = bool(re.search(r"\b(average|mean)\b", goal))
+    zero_division_targets = {
+        target.id
+        for node in nodes
+        if isinstance(node, ast.Assign)
+        and isinstance(node.value, ast.BinOp)
+        and isinstance(node.value.op, ast.Div)
+        and isinstance(node.value.right, ast.Constant)
+        and type(node.value.right.value) is int
+        and node.value.right.value == 0
+        for target in node.targets
+        if isinstance(target, ast.Name)
+    }
+    for unknown_name in undefined_names:
+        close_matches = [
+            name
+            for name in defined_names
+            if name != unknown_name
+            and SequenceMatcher(None, unknown_name, name).ratio() >= 0.75
+        ]
+        if len(close_matches) != 1:
+            continue
+        replacement = close_matches[0]
+        if average_goal and replacement in zero_division_targets:
+            # The average-specific repair below considers this pair together
+            # with the division-by-zero correction to avoid contradictory edits.
+            continue
+        for node in nodes:
+            if isinstance(node, ast.Name) and node.id == unknown_name:
+                edits.append(
+                    (
+                        _ast_character_offset(source, node, line_offsets=line_offsets),
+                        _ast_character_offset(
+                            source, node, end=True, line_offsets=line_offsets
+                        ),
+                        replacement,
+                    )
+                )
+        findings.append(
+            Finding(
+                code="LOGIC_UNDEFINED_NAME_TYPO",
+                message=(
+                    f"Changed undefined name '{unknown_name}' to the unique close "
+                    f"match '{replacement}'. Review this inferred spelling fix."
+                ),
+                line=next(
+                    node.lineno
+                    for node in nodes
+                    if isinstance(node, ast.Name)
+                    and node.id == unknown_name
+                    and isinstance(node.ctx, ast.Load)
+                ),
+                fixed=True,
+                verified=False,
+            )
+        )
+
     numeric_record_fields: set[tuple[str, str]] = set()
+    numeric_input_types: dict[str, str] = {}
+    for node in nodes:
+        if not isinstance(node, ast.Compare):
+            continue
+        operands = [node.left, *node.comparators]
+        for index, operand in enumerate(operands):
+            if not isinstance(operand, ast.Name):
+                continue
+            neighbor = operands[index - 1] if index else None
+            if neighbor is None and index + 1 < len(operands):
+                neighbor = operands[index + 1]
+            if not (
+                isinstance(neighbor, ast.Constant)
+                and type(neighbor.value) in {int, float}
+            ):
+                continue
+            detected_type = "int" if type(neighbor.value) is int else "float"
+            if numeric_input_types.get(operand.id) == "float" or detected_type == "float":
+                numeric_input_types[operand.id] = "float"
+            else:
+                numeric_input_types[operand.id] = "int"
+
     for node in nodes:
         if isinstance(node, ast.Compare):
             has_number = any(
@@ -274,14 +384,16 @@ def _repair_python_goal_logic(
             if value_name == variable
             and (record, field) in numeric_record_fields
         ]
-        if not matching_fields:
+        if not matching_fields and variable not in numeric_input_types:
             continue
-        conversion = "int" if any(
-            isinstance(call, ast.Call)
-            and isinstance(call.func, ast.Name)
-            and call.func.id == "int"
-            for call in nodes
-        ) else "float"
+        conversion = numeric_input_types.get(variable) or (
+            "int" if any(
+                isinstance(call, ast.Call)
+                and isinstance(call.func, ast.Name)
+                and call.func.id == "int"
+                for call in nodes
+            ) else "float"
+        )
         start = _ast_character_offset(source, node.value, line_offsets=line_offsets)
         end = _ast_character_offset(
             source, node.value, end=True, line_offsets=line_offsets

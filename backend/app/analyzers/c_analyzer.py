@@ -293,20 +293,39 @@ def _repair_c_compiler_diagnostic(source: str, output: str) -> str | None:
             previous = line_index - 1
             while previous >= 0 and not lines[previous].strip():
                 previous -= 1
-            if previous < 0:
+            if previous >= 0:
+                statement = lines[previous].rstrip("\r\n")
+                stripped = statement.rstrip()
+                if (
+                    stripped
+                    and not stripped.startswith("#")
+                    and not stripped.endswith((";", "{", "}", ":"))
+                    and "//" not in stripped
+                ):
+                    insertion = len(statement.rstrip())
+                    lines[previous] = (
+                        statement[:insertion]
+                        + ";"
+                        + statement[insertion:]
+                        + lines[previous][len(statement):]
+                    )
+                    return "".join(lines)
+
+            # A compact one-line program can have the statement and the next
+            # token on the same source line. Insert at the compiler location.
+            token_before = re.search(r"before\s+['‘](?P<token>[^'’]+)['’]", message)
+            if token_before is None:
                 continue
-            statement = lines[previous].rstrip("\r\n")
-            stripped = statement.rstrip()
-            if (
-                not stripped
-                or stripped.endswith((";", "{", "}", ":"))
-                or "//" in stripped
-            ):
+            next_token = token_before.group("token")
+            line = lines[line_index]
+            target = max(0, column - 1)
+            if not line.startswith(next_token, target):
+                target = line.find(next_token, target)
+            if target < 0:
                 continue
-            insertion = len(statement.rstrip())
-            lines[previous] = (
-                statement[:insertion] + ";" + statement[insertion:]
-                + lines[previous][len(statement):]
+            insertion = len(line[:target].rstrip())
+            lines[line_index] = (
+                line[:insertion] + ";" + line[insertion:]
             )
             return "".join(lines)
 

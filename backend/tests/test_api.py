@@ -446,6 +446,50 @@ def test_repairs_common_average_input_errors_when_goal_and_test_confirm(
     assert all(finding["fixed"] for finding in submission["findings"])
 
 
+def test_repairs_small_python_snippet_with_joined_lines_and_simple_typos(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("BUG_HUNTER_DATABASE", str(tmp_path / "test.sqlite3"))
+    source = (
+        '# Paste your Python code here\n'
+        'name = input("Enter your name: ")\n'
+        'age = input("Enter your age: ")\n'
+        'print("Welcome", nme)name = input("Enter your name: ")\n'
+        'age = input("Enter your age: ")\n'
+        'if age > 18\n'
+        '    print("You are an adult")\n'
+        '\nprint("Welcome", nme)'
+    )
+    goal = "Welcome the user and report whether they are an adult."
+
+    with TestClient(app) as client:
+        headers = register(client)
+        response = client.post(
+            "/api/submissions",
+            headers=headers,
+            json={"code": source, "programGoal": goal, "language": "python"},
+        )
+        rescan = client.post(
+            "/api/submissions",
+            headers=headers,
+            json={
+                "code": response.json()["correctedCode"],
+                "programGoal": goal,
+                "language": "python",
+            },
+        )
+
+    assert response.status_code == 201
+    corrected = response.json()["correctedCode"]
+    assert 'print("Welcome", name)\nname = input(' in corrected
+    assert "age = int(input(" in corrected
+    assert "if age > 18:" in corrected
+    assert all(finding["fixed"] for finding in response.json()["findings"])
+    assert rescan.status_code == 201
+    assert rescan.json()["correctedCode"] == corrected
+    assert rescan.json()["findings"] == []
+
+
 def test_reanalysis_fixes_multiple_student_record_errors(tmp_path, monkeypatch):
     monkeypatch.setenv("BUG_HUNTER_DATABASE", str(tmp_path / "test.sqlite3"))
     source = (
@@ -700,6 +744,42 @@ def test_c_analysis_applies_iterative_compiler_confirmed_repairs(
     assert all(finding["fixed"] for finding in submission["findings"])
     assert rescan.status_code == 201
     assert rescan.json()["correctedCode"] == submission["correctedCode"]
+    assert rescan.json()["findings"] == []
+
+
+@pytest.mark.skipif(
+    shutil.which("gcc") is None and shutil.which("clang") is None,
+    reason="C analysis requires GCC or Clang",
+)
+def test_repairs_small_one_line_c_program_and_rescans_cleanly(tmp_path, monkeypatch):
+    monkeypatch.setenv("BUG_HUNTER_DATABASE", str(tmp_path / "test.sqlite3"))
+    source = "int main(void){int value=3 return value;}\n"
+    goal = "Return the value successfully from main."
+
+    with TestClient(app) as client:
+        headers = register(client)
+        response = client.post(
+            "/api/submissions",
+            headers=headers,
+            json={"code": source, "programGoal": goal, "language": "c"},
+        )
+        rescan = client.post(
+            "/api/submissions",
+            headers=headers,
+            json={
+                "code": response.json()["correctedCode"],
+                "programGoal": goal,
+                "language": "c",
+            },
+        )
+
+    assert response.status_code == 201
+    assert response.json()["correctedCode"] == (
+        "int main(void){int value=3; return value;}\n"
+    )
+    assert response.json()["findings"]
+    assert all(finding["fixed"] for finding in response.json()["findings"])
+    assert rescan.status_code == 201
     assert rescan.json()["findings"] == []
 
 

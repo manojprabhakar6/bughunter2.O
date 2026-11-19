@@ -25,8 +25,56 @@ def _repair_python_syntax_step(source: str, error: SyntaxError) -> str | None:
         line_index = error.lineno - 1
         if 0 <= line_index < len(lines):
             line = lines[line_index]
+            if "expected ':'" in error.msg or "':' expected" in error.msg:
+                control_line = re.match(
+                    r"^(?P<indent>[\t ]*)(?:if|elif|else|for|while|def|class|try|except|finally|with)\b",
+                    line,
+                )
+                if control_line is not None:
+                    body = line.rstrip("\r\n")
+                    newline = line[len(body):]
+                    if not body.rstrip().endswith(":"):
+                        try:
+                            comment = next(
+                                (
+                                    token
+                                    for token in tokenize.generate_tokens(
+                                        io.StringIO(body).readline
+                                    )
+                                    if token.type == tokenize.COMMENT
+                                ),
+                                None,
+                            )
+                        except (tokenize.TokenError, IndentationError):
+                            comment = None
+                        comment_start = comment.start[1] if comment else len(body)
+                        before_comment = body[:comment_start]
+                        trimmed = before_comment.rstrip()
+                        lines[line_index] = (
+                            trimmed
+                            + ":"
+                            + before_comment[len(trimmed):]
+                            + body[comment_start:]
+                            + newline
+                        )
+                        return "".join(lines)
+
+            joined_statements = re.search(
+                r"\)(?P<space>[\t ]*)(?P<assignment>[A-Za-z_]\w*\s*=)",
+                line,
+            )
+            if joined_statements is not None:
+                indent = re.match(r"^[\t ]*", line).group(0)
+                split_at = joined_statements.start("assignment")
+                return (
+                    source[: line_offsets[line_index] + split_at]
+                    + "\n"
+                    + indent
+                    + source[line_offsets[line_index] + split_at :]
+                )
             if (
-                "Maybe you meant '==' instead of '='" in error.msg
+                "==" in error.msg
+                and "instead of '='" in error.msg
                 and re.match(r"^[\t ]*(?:if|elif|while)\b", line)
             ):
                 try:
