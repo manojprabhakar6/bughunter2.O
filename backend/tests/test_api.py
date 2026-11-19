@@ -411,6 +411,98 @@ def test_program_goal_applies_unverified_best_effort_repairs(tmp_path, monkeypat
     )
 
 
+def test_repairs_common_average_input_errors_when_goal_and_test_confirm(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("BUG_HUNTER_DATABASE", str(tmp_path / "test.sqlite3"))
+
+    source = (
+        "a = float(input())\n"
+        "b = float(input())\n"
+        "c = float(input()\n"
+        "ag = (a + b + c) / 0\n"
+        '\nprint("Average =", avg\n'
+    )
+    with TestClient(app) as client:
+        headers = register(client)
+        response = client.post(
+            "/api/submissions",
+            headers=headers,
+            json={
+                "code": source,
+                "programGoal": "Calculate the average of 3 numbers.",
+                "simulationInput": "1\n2\n3",
+                "expectedOutput": "1\n2\n3\nAverage = 2.0",
+            },
+        )
+
+    assert response.status_code == 201
+    submission = response.json()
+    assert "c = float(input())" in submission["correctedCode"]
+    assert "avg = (a + b + c) / 3" in submission["correctedCode"]
+    assert 'print("Average =", avg)' in submission["correctedCode"]
+    assert submission["simulation"]["testPassed"] is True
+    assert submission["comparison"]
+    assert all(finding["fixed"] for finding in submission["findings"])
+
+
+def test_reanalysis_fixes_multiple_student_record_errors(tmp_path, monkeypatch):
+    monkeypatch.setenv("BUG_HUNTER_DATABASE", str(tmp_path / "test.sqlite3"))
+    source = (
+        "students = []\n"
+        "def add_student():\n"
+        '    name = input("Name: ")\n'
+        '    marks = input("Marks: ")\n'
+        '    student = {"name": name, "marks": marks}\n'
+        "    students.append(student)\n"
+        "def update_marks():\n"
+        "    return int(input())\n"
+        "def display_students():\n"
+        "    for student in students:\n"
+        '        print(student["mark"])\n'
+        "def calculate_average():\n"
+        "    total = 0\n"
+        "    for student in students:\n"
+        '        total = total + student["marks"]\n'
+        "    average = total / len(students)\n"
+        "    print(average)\n"
+        "def search_student(search_name):\n"
+        "    for student in students:\n"
+        '        if student["name"] = search_name:\n'
+        "            return True\n"
+        "    return False\n"
+    )
+
+    with TestClient(app) as client:
+        headers = register(client)
+        response = client.post(
+            "/api/submissions",
+            headers=headers,
+            json={"code": source, "programGoal": "Student management system"},
+        )
+        rescan = client.post(
+            "/api/submissions",
+            headers=headers,
+            json={
+                "code": response.json()["correctedCode"],
+                "programGoal": "Student management system",
+            },
+        )
+
+    assert response.status_code == 201
+    submission = response.json()
+    corrected = submission["correctedCode"]
+    assert 'if student["name"] == search_name:' in corrected
+    assert 'marks = int(input("Marks: "))' in corrected
+    assert 'print(student["marks"])' in corrected
+    assert "if students else 0" in corrected
+    assert submission["comparison"]
+    assert all(finding["fixed"] for finding in submission["findings"])
+    assert rescan.status_code == 201
+    assert rescan.json()["correctedCode"] == corrected
+    assert rescan.json()["findings"] == []
+
+
 def test_python_sort_and_extreme_goals_apply_best_effort_fixes(tmp_path, monkeypatch):
     monkeypatch.setenv("BUG_HUNTER_DATABASE", str(tmp_path / "test.sqlite3"))
 
@@ -559,6 +651,56 @@ def test_c_source_is_checked_and_stored_without_execution(tmp_path, monkeypatch)
     assert all(finding["fixed"] for finding in repaired["findings"])
     assert '-printf("hell\n' in repaired["comparison"]
     assert '+    printf("hell");\n' in repaired["comparison"]
+
+
+@pytest.mark.skipif(
+    shutil.which("gcc") is None and shutil.which("clang") is None,
+    reason="C analysis requires GCC or Clang",
+)
+def test_c_analysis_applies_iterative_compiler_confirmed_repairs(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv("BUG_HUNTER_DATABASE", str(tmp_path / "test.sqlite3"))
+    source = (
+        "#include <stdio.h>\n"
+        "int main(void) {\n"
+        "    int count = 3\n"
+        '    printf("%d\\n", coutn);\n'
+        "    return 0;\n"
+        "}\n"
+    )
+
+    with TestClient(app) as client:
+        headers = register(client)
+        response = client.post(
+            "/api/submissions",
+            headers=headers,
+            json={
+                "code": source,
+                "programGoal": "Print count and return success.",
+                "language": "c",
+            },
+        )
+        rescan = client.post(
+            "/api/submissions",
+            headers=headers,
+            json={
+                "code": response.json()["correctedCode"],
+                "programGoal": "Print count and return success.",
+                "language": "c",
+            },
+        )
+
+    assert response.status_code == 201
+    submission = response.json()
+    assert "int count = 3;" in submission["correctedCode"]
+    assert 'printf("%d\\n", count);' in submission["correctedCode"]
+    assert submission["comparison"]
+    assert submission["findings"]
+    assert all(finding["fixed"] for finding in submission["findings"])
+    assert rescan.status_code == 201
+    assert rescan.json()["correctedCode"] == submission["correctedCode"]
+    assert rescan.json()["findings"] == []
 
 
 @pytest.mark.skipif(

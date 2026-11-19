@@ -357,6 +357,19 @@ function navigate(path) {
   render();
 }
 
+function startNewAnalysis() {
+  state.language = "python";
+  state.filename = "pasted.py";
+  state.code = "# Paste your Python code here\n";
+  state.programGoal = "";
+  state.simulationInput = "";
+  state.expectedOutput = "";
+  state.verifyExpectedOutput = false;
+  state.file = null;
+  state.error = "";
+  state.success = "";
+}
+
 function showMessage(message, kind = "error") {
   const node = document.querySelector("#page-message");
   if (!node) return;
@@ -614,7 +627,7 @@ function dashboardPage() {
         <h2>Analyze your code</h2>
         <p>Submit Python or C source to check for issues and review corrections, verification status, and a detailed comparison.</p>
         <div class="dashboard-actions">
-          <a class="button button-primary" href="${routeHref("/analyze")}" data-link>${icon("scan", 16)} Open code analyzer</a>
+          <a class="button button-primary" href="${routeHref("/analyze")}" data-link data-new-analysis>${icon("scan", 16)} Open code analyzer</a>
           <a class="button button-secondary" href="${routeHref("/history")}" data-link>${icon("clock", 16)} View history</a>
         </div>
       </section>
@@ -633,12 +646,16 @@ function analysisWorkspacePage() {
   const highlightLargeFile = code.length > MAX_HIGHLIGHT_SOURCE_CHARS;
   return shell(`
     <div class="page-heading">
-      <div><p class="eyebrow">WORKSPACE</p><h1>Code Analysis</h1></div>
+      <div><p class="eyebrow">WORKSPACE</p><h1>Code Analyzer</h1><p class="page-subtitle">Add your source, describe its purpose, then review the findings and suggested corrections.</p></div>
       <button class="button button-primary analyze-button" data-action="analyze" ${state.busy ? "disabled" : ""}>
         ${icon("scan", 17)} <span>${state.busy ? "Analyzing..." : "Analyze code"}</span>
       </button>
     </div>
     <div id="page-message" class="notice" role="status" ${state.error ? "" : "hidden"}>${escapeHtml(state.error)}</div>
+    <section class="analyzer-instructions" aria-label="How to analyze code">
+      <div class="instruction-heading"><span class="instruction-icon">${icon("scan", 17)}</span><div><strong>How to use the analyzer</strong><span>Three quick steps to get a useful report</span></div></div>
+      <ol><li><span>1</span>Choose Python or C and paste or upload your source.</li><li><span>2</span>Describe what the program should do.</li><li><span>3</span>Select <strong>Check and compare code</strong> to review findings, changes, and corrected code.</li></ol>
+    </section>
     <div class="workspace-grid">
       <section class="source-card panel">
         <div class="source-heading">
@@ -680,6 +697,12 @@ function analysisWorkspacePage() {
           <span>${state.filename ? escapeHtml(state.filename) : "Untitled"}</span>
           <span id="highlight-status" ${highlightLargeFile ? "" : "hidden"}>Plain editor for large files</span>
           <span id="byte-count">${new TextEncoder().encode(code).byteLength.toLocaleString()} / ${MAX_SOURCE_BYTES.toLocaleString()} bytes</span>
+        </div>
+        <div class="editor-submit-row">
+          <p>Run a scan to compare your source with any safe corrections.</p>
+          <button class="button button-primary" data-action="analyze" ${state.busy ? "disabled" : ""}>
+            ${icon("scan", 16)} <span>${state.busy ? "Analyzing..." : "Check and compare code"}</span>
+          </button>
         </div>
       </section>
       ${analysisOverview()}
@@ -782,10 +805,11 @@ function analysisFeedback(result) {
   `;
 }
 
-function findingList(findings) {
+function findingList(findings, sourceCode = "") {
   if (!findings.length) {
     return `<div class="empty-findings">${icon("check", 19)}<span>No findings to display.</span></div>`;
   }
+  const sourceLines = sourceCode.split(/\r?\n/);
   return `
     <div class="finding-list">
       ${findings.map((finding) => `
@@ -799,13 +823,82 @@ function findingList(findings) {
                   ? '<span class="fixed-pill">Verified fix</span>'
                   : '<span class="fixed-pill">Applied</span>'
               : ""}</div>
+            ${finding.line && sourceLines[finding.line - 1] !== undefined
+              ? `<div class="finding-source"><span>${finding.line}</span><code>${escapeHtml(sourceLines[finding.line - 1])}</code></div>${finding.column ? `<pre class="finding-caret">${" ".repeat(Math.min(finding.column - 1, 200))}^</pre>` : ""}`
+              : ""}
             <p>${escapeHtml(finding.message)}</p>
+            ${findingGuidanceMarkup(finding)}
           </div>
           ${finding.line ? `<span class="line-number">Line ${finding.line}${finding.column ? `:${finding.column}` : ""}</span>` : ""}
         </article>
       `).join("")}
     </div>
   `;
+}
+
+function findingGuidance(finding) {
+  const code = finding.code || "";
+  if (code === "SYNTAX_ERROR") {
+    return [
+      "Python could not parse this statement. The diagnostic gives the syntax detail it encountered.",
+      "Check the indicated line and the line before it for missing punctuation, unmatched brackets, or invalid syntax, then analyze again.",
+    ];
+  }
+  if (["C_ERROR", "C_FATAL_ERROR"].includes(code)) {
+    return [
+      "The C compiler could not compile the source at the reported location.",
+      "Use the compiler message below to correct the syntax, declaration, or type issue, then analyze again.",
+    ];
+  }
+  if (code === "C_WARNING") {
+    return [
+      "The compiler found code that may behave unexpectedly, even though it did not prevent compilation.",
+      "Review the warning and confirm the behavior is intentional; compiler warnings can point to real defects.",
+    ];
+  }
+  if (code === "F821") {
+    return [
+      "This name is used before Python can find a definition or import for it.",
+      "Check its spelling and scope, or define or import it before this use.",
+    ];
+  }
+  if (code === "F401") {
+    return [
+      "This import is not referenced anywhere in the analyzed file.",
+      "Remove the unused import, or use it if it was meant to be part of the program.",
+    ];
+  }
+  if (code.startsWith("LOGIC_")) {
+    return [
+      "This is a potential logic issue inferred from the source or program goal, rather than a parser or compiler error.",
+      "Compare the code with the intended behavior and test representative inputs. Goal-based suggestions may rely on assumptions.",
+    ];
+  }
+  if (code.startsWith("TEST_")) {
+    return [
+      code === "TEST_OUTPUT_MISMATCH"
+        ? "The preview output differed from the expected output you entered."
+        : "The analyzer could not complete the expected-output check for this source.",
+      "Review the test input and expected output, then try additional cases in the program's normal environment.",
+    ];
+  }
+  if (code.startsWith("B") || code.startsWith("ASYNC") || code.startsWith("BLE")) {
+    return [
+      "A Python bug-pattern check flagged this construct as a likely mistake or a source of unexpected behavior.",
+      "Review the diagnostic and confirm the suggested correction matches the program's intent.",
+    ];
+  }
+  return [
+    "The analyzer reported the diagnostic below for this source location.",
+    finding.fixed
+      ? "A correction was applied. Review the before-and-after comparison and test representative inputs."
+      : "Review the diagnostic at this location, correct the source if needed, and analyze it again.",
+  ];
+}
+
+function findingGuidanceMarkup(finding) {
+  const [cause, next] = findingGuidance(finding);
+  return `<div class="finding-guidance"><p><strong>Why this was flagged</strong>${escapeHtml(cause)}</p><p><strong>What to do next</strong>${escapeHtml(next)}</p></div>`;
 }
 
 function diffView(result) {
@@ -819,7 +912,7 @@ function diffView(result) {
       ? "No source changes were made. Review the findings above; add a more specific program goal or test case when intent is ambiguous."
       : "No corrections were needed; the source passed the configured checks."}</div>`;
   }
-  return `<pre class="diff-code">${diff.split("\n").map((line) => {
+  return `<div class="diff-legend" aria-label="Comparison legend"><span class="diff-legend-added">+ Added or corrected</span><span class="diff-legend-removed">− Removed from original</span><span>Unmarked lines show context</span></div><pre class="diff-code">${diff.split("\n").map((line) => {
     const type = line.startsWith("+") && !line.startsWith("+++") ? "diff-added"
       : line.startsWith("-") && !line.startsWith("---") ? "diff-removed"
         : line.startsWith("@@") ? "diff-hunk" : "";
@@ -899,14 +992,14 @@ function analysisPage() {
       ${simulationPreview(result)}
       <section class="result-section">
         <div class="result-section-heading"><div><h2>Findings and locations</h2><p>Review every reported issue and its source position.</p></div><span class="section-count">${(result.findings || []).length}</span></div>
-        ${findingList(result.findings || [])}
+        ${findingList(result.findings || [], result.originalCode || "")}
       </section>
       <section class="result-section">
-        <div class="result-section-heading"><div><h2>Code comparison</h2><p>Changes between your original and corrected source.</p></div></div>
+        <div class="result-section-heading"><div><h2>What changed</h2><p>Line-by-line comparison: removed lines are from your original; added lines are proposed corrections.</p></div></div>
         ${diffView(result)}
       </section>
       <section class="result-section corrected-section">
-        <div class="result-section-heading"><div><h2>Corrected code</h2><p>Best-effort and verified changes are shown with their comparison; review unverified fixes.</p></div><div class="result-actions"><button class="button button-secondary button-small" data-action="reanalyze-original" title="Re-run analysis using the unchanged original source">${icon("scan", 15)} <span>Reanalyze original</span></button><button class="button button-secondary button-small" data-action="continue-in-editor">${icon("code", 15)} Continue in editor</button><button class="button button-secondary button-small" data-action="download-corrected">${icon("download", 15)} Download .${result.language === "c" ? "c" : "py"}</button></div></div>
+        <div class="result-section-heading"><div><h2>Corrected code</h2><p>${result.correctedCode === result.originalCode ? "No automatic changes were applied; your submitted source is shown below." : "Review the complete updated source. Unverified best-effort changes are marked above."}</p></div><div class="result-actions"><button class="button button-secondary button-small" data-action="reanalyze-original" title="Re-run analysis using the unchanged original source">${icon("scan", 15)} <span>Reanalyze original</span></button><button class="button button-secondary button-small" data-action="continue-in-editor">${icon("code", 15)} Continue in editor</button><button class="button button-secondary button-small" data-action="download-corrected">${icon("download", 15)} Download .${result.language === "c" ? "c" : "py"}</button></div></div>
         <pre class="source-preview">${highlightedCode(result.correctedCode, result.language)}</pre>
         <button class="button button-secondary button-small copy-code-button" data-action="copy-corrected">${icon("copy", 15)} Copy corrected code</button>
       </section>
@@ -1313,6 +1406,9 @@ app.addEventListener("click", async (event) => {
     if (href) {
       const route = isGithubPages && href.startsWith("#") ? href.slice(1) : href;
       if (route === "/login" || route === "/register" || localStorage.getItem(TOKEN_STORAGE_KEY)) {
+        if (route === "/analyze" && link.hasAttribute("data-new-analysis")) {
+          startNewAnalysis();
+        }
         navigate(route);
       }
     }

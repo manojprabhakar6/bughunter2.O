@@ -5,6 +5,14 @@ safe corrections where available, a restricted Python preview, and SQLite
 persistence. Arbitrary submitted programs are never executed. API JSON uses
 camelCase names to match the frontend.
 
+Analysis code lives under `app/analyzers`: `repair_engine.py` dispatches work,
+`ast_analyzer.py` handles Python parsing, `ruff_analyzer.py` runs Ruff, and
+`bug_detector.py` contains goal-guided checks. `c_analyzer.py` handles C compiler
+diagnostics; `source_utils.py` and `analyzer_types.py` hold shared helpers and
+types. `ai_repair.py` defines an optional provider interface but no AI service
+is configured by default. `cpp_analyzer.py` is a standalone compiler checker;
+the public API currently accepts Python and C only.
+
 ## Setup
 
 Run these commands from the `backend` directory:
@@ -72,10 +80,15 @@ its own submissions.
   the original source.
 - `DELETE /api/submissions/{id}` — delete a saved submission.
 
-Python analysis checks syntax and Ruff `E`, `F`, and `B` diagnostics. It repairs
-missing closing delimiters, simple unterminated single-line strings, and a
-recognized `int(inputenter ...)` prompt typo only when the complete source
-parses after repair. Source formatting and structure are otherwise preserved.
+Python analysis checks syntax and Ruff `E`, `F`, `B`, `ASYNC`, and `BLE`
+diagnostics, including common async misuse and overly broad exception handling.
+It repairs clear missing delimiters, a comparison written with `=` where Python
+suggests `==`, simple unterminated single-line strings, and a recognized
+`int(inputenter ...)` prompt typo only when the complete source parses after
+repair. Goal-guided checks can also correct a clear dictionary-key typo, infer
+numeric input conversion, and guard an average over an empty collection. These
+inferred logic fixes are marked unverified until tested. Source formatting and
+structure are otherwise preserved.
 Unresolved linter findings and logic findings are returned for review. It also
 reports conservative logic
 warnings for identity comparisons with value literals, unreachable statements,
@@ -87,10 +100,11 @@ when the restricted preview matches the expected output; a mismatch or
 unsupported preview rejects the candidate changes. Without an expected output,
 identity-comparison findings remain advisory. If syntax errors prevent parsing,
 logic checks are explicitly reported as skipped until the source can be parsed.
-C analysis checks compiler diagnostics using `-fsyntax-only`; it reports issues
-and preserves the submitted source without attempting general automatic
-repairs. One constrained repair is available for a source containing only
-comments and a single unterminated `printf` call. If an expected-output test is
+C analysis checks compiler diagnostics using `-fsyntax-only` and rechecks
+compiler-confirmed repairs for a missing statement semicolon or a clear typo in
+an undeclared identifier. One constrained repair is available for a source
+containing only comments and a single unterminated `printf` call. Other
+ambiguous diagnostics remain visible for review. If an expected-output test is
 provided, that candidate repair is accepted only when its output matches in the
 isolated C sandbox; otherwise compiler success is the only repair check.
 

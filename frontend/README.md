@@ -12,11 +12,16 @@ to review, not guaranteed detections or automatic logic repairs.
 Analysis reports show findings with line/column locations, the original-to-
 corrected diff, and corrected code together. Clean results receive a positive
 message; downloadable original and corrected files retain their `.py` or `.c`
-extension. Simple missing delimiters, unterminated single-line strings, and a
-recognized `int(inputenter ...)` Python input-prompt typo are corrected only
-when the entire source parses afterward. A standalone incomplete C `printf`
-snippet can be wrapped in a minimal program when GCC or Clang then accepts it;
-other ambiguous errors stay visible for review. Python also applies Ruff's safe
+extension. Clear missing delimiters, a comparison written with `=` where Python
+suggests `==`, unterminated single-line strings, and a recognized
+`int(inputenter ...)` Python input-prompt typo are corrected only when the entire
+source parses afterward. Goal-guided Python checks can also correct a clear
+dictionary-key typo, infer numeric input conversion, and guard an average over
+an empty collection; inferred logic fixes are marked unverified until tested.
+A C missing-statement-semicolon fix or clear undeclared-name typo is retained
+only when GCC or Clang accepts the updated source. A standalone incomplete C
+`printf` snippet can also be wrapped in a minimal program when the compiler
+accepts it; other ambiguous errors stay visible for review. Python also applies Ruff's safe
 automatic fixes. A comparison such as `value is 0` is corrected only when an
 expected-output test is supplied and the restricted preview confirms the result.
 Mismatched or unsupported previews leave candidate changes unapplied. Without
