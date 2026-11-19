@@ -9,7 +9,9 @@ const localHostname = ["127.0.0.1", "localhost", "bug-hunter.localhost"].include
 );
 const DEFAULT_API_URL = localHostname
   ? `http://${window.location.hostname === "bug-hunter.localhost" ? "127.0.0.1" : window.location.hostname}:8000`
-  : window.location.origin;
+  : window.location.hostname === "manojprabhakar6.github.io"
+    ? "https://bughunter2-o.onrender.com"
+    : window.location.origin;
 const MAX_SOURCE_BYTES = 5_000_000;
 const MAX_HIGHLIGHT_SOURCE_CHARS = 200_000;
 const MAX_NOTIFICATIONS = 8;

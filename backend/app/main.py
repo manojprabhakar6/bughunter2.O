@@ -72,6 +72,7 @@ app.add_middleware(
         "http://127.0.0.1:5173",
         "http://localhost:5173",
         "http://bug-hunter.localhost:5173",
+        "https://manojprabhakar6.github.io",
     ],
     allow_methods=["*"],
     allow_headers=["*"],

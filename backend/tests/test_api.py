@@ -967,6 +967,14 @@ def test_frontend_origin_can_call_api_and_camel_case_fields_are_accepted(
                 "Access-Control-Request-Headers": "authorization,content-type",
             },
         )
+        pages_preflight = client.options(
+            "/api/submissions",
+            headers={
+                "Origin": "https://manojprabhakar6.github.io",
+                "Access-Control-Request-Method": "POST",
+                "Access-Control-Request-Headers": "authorization,content-type",
+            },
+        )
         headers = register(client)
         submission = client.post(
             "/api/submissions",
@@ -983,6 +991,11 @@ def test_frontend_origin_can_call_api_and_camel_case_fields_are_accepted(
     assert (
         preflight.headers["access-control-allow-origin"]
         == "http://bug-hunter.localhost:5173"
+    )
+    assert pages_preflight.status_code == 200
+    assert (
+        pages_preflight.headers["access-control-allow-origin"]
+        == "https://manojprabhakar6.github.io"
     )
     assert submission.status_code == 201
     assert submission.json()["originalCode"] == "print('frontend')\n"
