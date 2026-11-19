@@ -32,6 +32,18 @@ class _PreviewContinue(Exception):
     pass
 
 
+class _PreviewReturn(Exception):
+    def __init__(self, value: object):
+        self.value = value
+
+
+@dataclass(frozen=True)
+class _PreviewFunction:
+    name: str
+    parameters: tuple[str, ...]
+    body: list[ast.stmt]
+
+
 @dataclass
 class _PreviewState:
     environment: dict[str, object] = field(default_factory=dict)
@@ -39,6 +51,7 @@ class _PreviewState:
     output: list[str] = field(default_factory=list)
     steps_remaining: int = MAX_SIMULATION_STEPS
     input_index: int = 0
+    call_depth: int = 0
 
     @property
     def output_size(self) -> int:
@@ -274,6 +287,31 @@ def _evaluate_call(node: ast.Call, state: _PreviewState) -> object:
     if not isinstance(node.func, ast.Name):
         raise _PreviewUnsupported("Only approved built-in calls are previewed.")
     name = node.func.id
+    user_function = state.environment.get(name)
+    if isinstance(user_function, _PreviewFunction):
+        if node.keywords:
+            raise _PreviewUnsupported("Keyword arguments for user functions aren't supported.")
+        arguments = [_evaluate(argument, state) for argument in node.args]
+        if len(arguments) != len(user_function.parameters):
+            raise _PreviewRuntimeError(
+                f"{name}() takes {len(user_function.parameters)} positional "
+                f"argument(s) but {len(arguments)} were given"
+            )
+        if state.call_depth >= 100:
+            raise _PreviewUnsupported("The function call-depth limit was reached.")
+        outer_environment = state.environment
+        state.environment = dict(outer_environment)
+        state.environment.update(zip(user_function.parameters, arguments, strict=True))
+        state.call_depth += 1
+        try:
+            _execute_statements(user_function.body, state)
+        except _PreviewReturn as returned:
+            return _checked_value(returned.value)
+        finally:
+            state.call_depth -= 1
+            state.environment = outer_environment
+        return None
+
     arguments = [_evaluate(argument, state) for argument in node.args]
     keywords = {
         keyword.arg: _evaluate(keyword.value, state) for keyword in node.keywords
@@ -287,7 +325,7 @@ def _evaluate_call(node: ast.Call, state: _PreviewState) -> object:
             raise _PreviewInputRequired
         raw_input = state.inputs[state.input_index]
         state.input_index += 1
-        _append_output(state, f"{prompt}{raw_input}\n")
+        _append_output(state, prompt)
         return raw_input
 
     if name == "print":
@@ -348,6 +386,33 @@ def _assign(target: ast.expr, value: object, state: _PreviewState) -> None:
 
 def _execute_statement(statement: ast.stmt, state: _PreviewState) -> None:
     _tick(state)
+
+    if isinstance(statement, (ast.FunctionDef, ast.AsyncFunctionDef)):
+        if (
+            isinstance(statement, ast.AsyncFunctionDef)
+            or statement.decorator_list
+            or statement.args.defaults
+            or statement.args.kw_defaults
+            or statement.args.vararg
+            or statement.args.kwarg
+            or statement.args.kwonlyargs
+            or statement.args.posonlyargs
+        ):
+            raise _PreviewUnsupported(
+                "Only simple synchronous functions with positional parameters are previewed."
+            )
+        state.environment[statement.name] = _PreviewFunction(
+            name=statement.name,
+            parameters=tuple(argument.arg for argument in statement.args.args),
+            body=statement.body,
+        )
+        return
+
+    if isinstance(statement, ast.Return):
+        if state.call_depth == 0:
+            raise _PreviewRuntimeError("return outside function")
+        value = _evaluate(statement.value, state) if statement.value else None
+        raise _PreviewReturn(value)
 
     if isinstance(statement, ast.Assign):
         value = _evaluate(statement.value, state)

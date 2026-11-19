@@ -22,7 +22,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from app.analyzer import AnalyzerUnavailable, analyze_code
+from app.analyzers.ai_repair import repair_provider_status
 from app.c_sandbox import simulate_c_sandbox
+from app.python_sandbox import simulate_python_sandbox
 from app.database import connect, initialize_database
 from app.schemas import (
     MAX_CODE_SIZE,
@@ -41,7 +43,7 @@ from app.schemas import (
     UserPublic,
     validate_program_goal,
 )
-from app.simulator import simulate_python, verify_expected_output
+from app.simulator import verify_expected_output
 
 PASSWORD_ITERATIONS = 310_000
 SESSION_LIFETIME = timedelta(days=7)
@@ -343,8 +345,8 @@ def _create_submission(
 
 
 @app.get("/api/health")
-def health() -> dict[str, str]:
-    return {"status": "ok"}
+def health() -> dict[str, object]:
+    return {"status": "ok", "aiRepair": repair_provider_status()}
 
 
 @app.post(
@@ -447,15 +449,9 @@ def create_demo_session() -> AuthToken:
         )
         for filename, language, program_goal, original, corrected, findings in samples:
             simulation = (
-                simulate_python(corrected)
+                simulate_python_sandbox(corrected, "")
                 if language == "python"
-                else SimulationResult(
-                    status="unsupported",
-                    message=(
-                        "C demo source is compiler-checked only; enable an "
-                        "expected-output test to run it in the sandbox."
-                    ),
-                )
+                else simulate_c_sandbox(corrected, "")
             )
             connection.execute(
                 """
@@ -586,10 +582,9 @@ async def upload_submission(
         str,
         Form(
             alias="programGoal",
-            min_length=3,
             max_length=MAX_PROGRAM_GOAL_LENGTH,
         ),
-    ],
+    ] = "",
     simulation_input: Annotated[
         str,
         Form(
@@ -746,24 +741,19 @@ def update_corrected_code(
             raise HTTPException(status_code=404, detail="Submission not found.")
         if row["language"] == "python":
             simulation = verify_expected_output(
-                simulate_python(payload.corrected_code, row["simulation_input"]),
-                row["expected_output"],
-            )
-        elif row["expected_output"] is not None:
-            simulation = verify_expected_output(
-                simulate_c_sandbox(
+                simulate_python_sandbox(
                     payload.corrected_code,
                     row["simulation_input"],
                 ),
                 row["expected_output"],
             )
         else:
-            simulation = SimulationResult(
-                status="unsupported",
-                message=(
-                    "C source is compiler-checked only unless an "
-                    "expected-output test is enabled."
+            simulation = verify_expected_output(
+                simulate_c_sandbox(
+                    payload.corrected_code,
+                    row["simulation_input"],
                 ),
+                row["expected_output"],
             )
         cursor = connection.execute(
             """

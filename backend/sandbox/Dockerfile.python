@@ -1,0 +1,4 @@
+FROM python:3.14-slim
+
+USER 65534:65534
+WORKDIR /sandbox

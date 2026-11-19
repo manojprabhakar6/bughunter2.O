@@ -29,7 +29,7 @@ def _validate_source_size(value: str) -> str:
 
 def validate_program_goal(value: str) -> str:
     normalized = value.strip()
-    if len(normalized) < 3:
+    if normalized and len(normalized) < 3:
         raise ValueError(
             "Describe what the program should do in at least 3 characters."
         )
@@ -76,7 +76,7 @@ class SubmissionInput(ApiModel):
     )
 
     code: str = Field(min_length=1, max_length=MAX_CODE_SIZE)
-    program_goal: str = Field(min_length=3, max_length=MAX_PROGRAM_GOAL_LENGTH)
+    program_goal: str = Field(default="", max_length=MAX_PROGRAM_GOAL_LENGTH)
     simulation_input: str = Field(default="", max_length=MAX_SIMULATION_INPUT_LENGTH)
     expected_output: str | None = Field(
         default=None,

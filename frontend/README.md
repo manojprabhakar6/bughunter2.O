@@ -4,10 +4,17 @@ A dependency-free frontend styled after the supplied Bug Hunter screenshots.
 It includes email sign-in/registration, a separate dashboard overview and
 Python/C analysis workspace, source-file selection and drag-and-drop, result
 findings and code comparison, submission history, and API settings.
-The analysis workspace requires a short description of the program's intended
-behavior. Reports retain this goal and include conservative Python logic
+The analysis workspace accepts an optional short description of the program's
+intended behavior. Reports retain this goal when supplied and include conservative Python logic
 warnings alongside syntax/compiler diagnostics; such warnings are suggestions
 to review, not guaranteed detections or automatic logic repairs.
+The backend can optionally use an OpenAI or Anthropic model for goal-aware
+full-source repairs when a provider, model, and server-side API key are
+configured. Submitted source, goal, and diagnostics are then sent to that
+provider. Source, goal, diagnostics, and optional test data are sent to the
+provider. Every proposed Python rewrite is checked with Python parsing and Ruff;
+C rewrites must pass GCC or Clang before they are shown. See the backend README
+for server configuration.
 
 Analysis reports show findings with line/column locations, the original-to-
 corrected diff, and corrected code together. Clean results receive a positive
@@ -32,17 +39,16 @@ Use **Continue in editor** to work from the corrected version, or
 **Reanalyze original** to refresh an existing report while preserving its
 original source. Individual saved analyses can be deleted from the history page.
 
-Python reports include a restricted preview for supported syntax. Enter one
-test value per `input()` call in **Optional preview inputs**. To verify Python
-corrections, enable the expected-output check and enter the expected printed
-output. The preview interprets only a documented subset with bounded steps and
-output; unsupported constructs are reported instead of run. For C, enter
-standard input and enable the expected-output check to run the compiled program
-in the network-disabled Docker sandbox. C runtime tests require the local
-`bug-hunter-c-sandbox:1` image; without it, the test is reported as unverified
-and no sandbox-based correction is accepted. C is never run outside that
-sandbox. Static analysis and sandboxed examples cannot guarantee semantic
-correctness.
+Python and C programs are previewed automatically after server-side analysis.
+Enter one value per `input()` call for Python, or standard input for C, in
+**Optional preview inputs**. Enable expected-output verification to compare the
+actual output against your expected output. Both languages run only inside
+network-disabled Docker sandboxes with resource limits. Build the local images
+`bug-hunter-python-sandbox:1` and `bug-hunter-c-sandbox:1` using the backend
+README instructions. Without the Python image, supported Python syntax uses the
+bounded AST preview; without the C image, C output is unavailable but compiler
+diagnostics remain. Static analysis and sandboxed examples cannot guarantee
+semantic correctness.
 
 The editor uses Python/C syntax colors, line numbers, four-space Tab
 indentation, matching bracket insertion, and language-aware Enter indentation
@@ -57,7 +63,7 @@ report. These are in-app notifications, not operating-system push alerts.
 Start the backend from `backend` in a separate terminal:
 
 ```powershell
-python -m uvicorn app.main:app --reload
+python -m uvicorn app.main:app --reload --port 8001
 ```
 
 Then start this frontend from `frontend`:
@@ -68,7 +74,7 @@ python server.py
 
 Open `http://bug-hunter.localhost:5173/login`. This branded hostname resolves
 to your own computer; it is not a public website and still uses a development
-port. The frontend calls the FastAPI backend at `http://127.0.0.1:8000` by
+port. The frontend calls the FastAPI backend at `http://127.0.0.1:8001` by
 default. Change the backend URL on the Settings page if it runs elsewhere.
 
 Choose **Try the interactive demo** on the login or registration page for a

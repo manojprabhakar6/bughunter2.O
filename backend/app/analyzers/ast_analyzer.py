@@ -281,6 +281,8 @@ def _analyze_python(
     program_goal: str,
     simulation_input: str,
     expected_output: str | None,
+    *,
+    preview_runner=None,
 ) -> AnalysisResult:
     original_source = source
     syntax_findings: list[Finding] = []
@@ -424,10 +426,14 @@ def _analyze_python(
     findings.extend(logic_findings)
     corrected_tree = ast.parse(corrected_code)
     simulation = verify_expected_output(
-        simulate_python(
-            corrected_code,
-            simulation_input,
-            syntax_tree=corrected_tree,
+        (
+            preview_runner(corrected_code, simulation_input)
+            if preview_runner is not None
+            else simulate_python(
+                corrected_code,
+                simulation_input,
+                syntax_tree=corrected_tree,
+            )
         ),
         expected_output,
     )

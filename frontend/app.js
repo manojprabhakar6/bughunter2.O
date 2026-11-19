@@ -9,7 +9,7 @@ const localHostname = ["127.0.0.1", "localhost", "bug-hunter.localhost"].include
 );
 const isGithubPages = window.location.hostname === "manojprabhakar6.github.io";
 const DEFAULT_API_URL = localHostname
-  ? `http://${window.location.hostname === "bug-hunter.localhost" ? "127.0.0.1" : window.location.hostname}:8000`
+  ? "http://127.0.0.1:8001"
   : isGithubPages
     ? "https://bughunter2-o.onrender.com"
     : window.location.origin;
@@ -37,6 +37,7 @@ const icons = {
   logout: '<path d="M10 17l5-5-5-5m5 5H3"/><path d="M13 4h5a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-5"/>',
   upload: '<path d="M12 16V4m-5 5 5-5 5 5"/><path d="M4 15v4a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-4"/>',
   shield: '<path d="M12 3 19 6v5c0 4.5-2.8 7.5-7 10-4.2-2.5-7-5.5-7-10V6l7-3Z"/><path d="m9 12 2 2 4-4"/>',
+  sparkles: '<path d="m12 3 1.4 5.6L19 10l-5.6 1.4L12 17l-1.4-5.6L5 10l5.6-1.4L12 3Z"/><path d="m19 16 .6 2.4L22 19l-2.4.6L19 22l-.6-2.4L16 19l2.4-.6L19 16Z"/>',
   code: '<path d="m8 8-4 4 4 4m8-8 4 4-4 4m-2-11-4 14"/>',
   arrow: '<path d="M5 12h14m-6-6 6 6-6 6"/>',
   check: '<path d="m5 12 4 4L19 6"/>',
@@ -144,7 +145,12 @@ function recordAnalysisNotification(result) {
 }
 
 function apiBase() {
-  return (localStorage.getItem(API_STORAGE_KEY) || DEFAULT_API_URL).replace(/\/+$/, "");
+  const savedApi = localStorage.getItem(API_STORAGE_KEY);
+  if (localHostname && /^http:\/\/(?:127\.0\.0\.1|localhost):8000\/?$/.test(savedApi || "")) {
+    localStorage.setItem(API_STORAGE_KEY, DEFAULT_API_URL);
+    return DEFAULT_API_URL;
+  }
+  return (savedApi || DEFAULT_API_URL).replace(/\/+$/, "");
 }
 
 class ApiError extends Error {
@@ -522,7 +528,7 @@ function authPage(isRegister) {
             : `New to Bug Hunter? <a class="text-link" href="${routeHref("/register")}" data-link>Create account</a>`}
         </p>
       </section>
-      <p class="auth-footnote">Python uses a restricted preview; C output tests run only in the isolated sandbox.</p>
+      <p class="auth-footnote">Python previews use the isolated sandbox when available; C runs only in the isolated sandbox.</p>
     </main>
   `;
 }
@@ -605,7 +611,7 @@ function analysisOverview() {
       </div>
       <div class="safe-callout">
         <span class="safe-check">${icon("check", 15)}</span>
-        <div><strong>Safe environment</strong><p>Python uses a restricted preview; C execution requires an enabled test and the isolated sandbox.</p></div>
+        <div><strong>Safe environment</strong><p>Python and C output previews run inside isolated sandboxes with resource limits.</p></div>
       </div>
     </aside>
   `;
@@ -633,7 +639,7 @@ function dashboardPage() {
       </section>
       ${analysisOverview()}
     </div>
-    <div class="workspace-tip">${icon("shield", 16)} <span>Python preview uses a restricted interpreter. C runs only for an enabled output test inside the isolated sandbox.</span></div>
+    <div class="workspace-tip">${icon("shield", 16)} <span>Python and C run previews only inside restricted, network-disabled containers when their sandbox images are available. Python has a bounded safe-preview fallback.</span></div>
   `, "dashboard");
 }
 
@@ -671,22 +677,22 @@ function analysisWorkspacePage() {
           <input id="source-file" class="visually-hidden" type="file" accept=".py,.c,text/x-python,text/x-c" />
           <span class="drop-file-icon">${icon("file", 20)}</span>
         </div>
-        <label class="goal-label" for="program-goal">What should this program do? <span>Required</span></label>
-        <textarea id="program-goal" class="program-goal-input" rows="2" minlength="3" maxlength="2000" required placeholder="For example: calculate the average of a list of test scores">${escapeHtml(state.programGoal)}</textarea>
-        <p class="goal-hint">This helps flag likely logic issues. Describe the expected behavior, not just the language.</p>
+        <label class="goal-label" for="program-goal">Program goal <span>Optional</span></label>
+        <textarea id="program-goal" class="program-goal-input" rows="2" maxlength="2000" placeholder="Optional: describe what the program should do">${escapeHtml(state.programGoal)}</textarea>
+        <p class="goal-hint">Leave blank for automatic code analysis. A short goal can help identify logic issues more accurately.</p>
         <label class="goal-label simulation-input-label" for="simulation-input">
           ${state.language === "python" ? "Optional preview inputs" : "Optional test input"}
           <span>${state.language === "python" ? "One per input() call" : "Program stdin, one value per line"}</span>
         </label>
         <textarea id="simulation-input" class="program-goal-input simulation-input" rows="2" maxlength="10000" placeholder="${state.language === "python" ? "Enter one test value per line" : "Enter text to pass to the C program"}">${escapeHtml(state.simulationInput)}</textarea>
         <p class="goal-hint">${state.language === "python"
-          ? "Used only by the restricted Python preview."
-          : "Used only when the expected-output check runs C in the network-disabled sandbox."}</p>
+          ? "Passed to the Python sandbox preview; enter one line for each input() call."
+          : "Passed to the C sandbox preview as standard input."}</p>
         <label class="expected-output-toggle"><input id="verify-output" type="checkbox" ${state.verifyExpectedOutput ? "checked" : ""}><span>${state.language === "python" ? "Verify against expected Python output" : "Verify against expected C output (sandbox)"}</span></label>
         <textarea id="expected-output" class="program-goal-input expected-output-input" rows="3" maxlength="20000" ${state.verifyExpectedOutput ? "" : "disabled"} placeholder="Enter expected output; trailing newlines are ignored">${escapeHtml(state.expectedOutput)}</textarea>
         <p class="goal-hint">${state.language === "python"
-          ? "A matching restricted preview verifies behavior-changing fixes. If the preview cannot run your code, best-effort corrections may still be shown as unverified; review them before use."
-          : "C runs only after you enable this check, inside a network-disabled container with CPU, memory, process, time, and output limits. Docker must be installed and the Bug Hunter sandbox image built."}</p>
+          ? "The program is previewed automatically. Enable this to compare its output with what you expect."
+          : "C is previewed automatically inside the sandbox. Enable this to compare its output with what you expect."}</p>
         <div class="paste-label">${icon("file", 15)} <span>Paste code</span></div>
         <div class="code-editor-wrap ${highlightLargeFile ? "editor-plain" : ""}">
           <pre id="code-line-numbers" class="code-line-numbers" aria-hidden="true" ${highlightLargeFile ? "hidden" : ""}>${highlightLargeFile ? "" : Array.from({ length: code.split("\n").length }, (_, index) => index + 1).join("\n")}</pre>
@@ -707,7 +713,7 @@ function analysisWorkspacePage() {
       </section>
       ${analysisOverview()}
     </div>
-    <div class="workspace-tip">${icon("shield", 16)} <span>Python preview interprets only a bounded subset. Best-effort changes may be unverified when a test cannot run. C is compiler-checked and runs only for an enabled output test inside the restricted sandbox.</span></div>
+    <div class="workspace-tip">${icon("shield", 16)} <span>Goal and expected output are optional. Analysis runs automatically. Python uses an isolated sandbox when available and a bounded interpreter fallback; C output requires the isolated sandbox.</span></div>
   `, "analyze");
 }
 
@@ -775,7 +781,9 @@ function analysisFeedback(result) {
     const compliment = result.language === "c"
       ? result.simulation?.testPassed === true
         ? "Great job—your C source passed the configured compiler check and sandbox output test."
-        : "Great job—your C source passed the configured compiler checks."
+        : result.simulation?.status === "completed"
+          ? "Great job—your C source passed compiler checks and produced sandbox output."
+          : "Great job—your C source passed compiler checks; see the preview status below."
       : "Clean, readable work—keep up the great coding.";
     return `
       <div class="analysis-feedback feedback-perfect">
@@ -909,7 +917,7 @@ function diffView(result) {
       return `<div class="empty-diff">No correction was accepted: its output did not match the expected result. The actual and expected output are shown above; the corrected code remains unchanged.</div>`;
     }
     return `<div class="empty-diff">${hasFindings
-      ? "No source changes were made. Review the findings above; add a more specific program goal or test case when intent is ambiguous."
+      ? "No source changes were made. Review the findings above; an optional program goal or test case can clarify ambiguous behavior."
       : "No corrections were needed; the source passed the configured checks."}</div>`;
   }
   return `<div class="diff-legend" aria-label="Comparison legend"><span class="diff-legend-added">+ Added or corrected</span><span class="diff-legend-removed">− Removed from original</span><span>Unmarked lines show context</span></div><pre class="diff-code">${diff.split("\n").map((line) => {
@@ -940,19 +948,12 @@ function simulationPreview(result) {
     : preview.testPassed === false
       ? "simulation-error"
       : `simulation-${preview.status}`;
-  const cOutputTest = result.language === "c" &&
-    result.expectedOutput !== null &&
-    result.expectedOutput !== undefined;
   const title = result.language === "python"
-    ? "Safe Python preview"
-    : cOutputTest
-      ? "Sandboxed C preview"
-      : "C compiler check";
+    ? "Python program output"
+    : "C program output";
   const description = result.language === "python"
-    ? "Only a bounded set of Python operations is interpreted; arbitrary code is not run."
-    : cOutputTest
-      ? "C is compiled and run only for this test inside a restricted, network-disabled container."
-      : "C source is checked by the compiler only because no output test was requested.";
+    ? "Python source is checked, then previewed in an isolated sandbox when available."
+    : "C source is compiler-checked, then previewed in an isolated sandbox.";
   return `
     <section class="result-section simulation-section">
       <div class="result-section-heading"><div><h2>${title}</h2><p>${description}</p></div><span class="simulation-status ${statusClass}">${escapeHtml(status)}</span></div>
@@ -987,7 +988,7 @@ function analysisPage() {
       ${analysisFeedback(result)}
       <section class="result-section">
         <div class="result-section-heading"><div><h2>Program goal</h2><p>Expected behavior supplied for this analysis.</p></div></div>
-        <p class="program-goal-report">${escapeHtml(result.programGoal || "No program goal was provided for this older submission.")}</p>
+        <p class="program-goal-report">${escapeHtml(result.programGoal || "No optional program goal was provided; analysis used the source and diagnostics.")}</p>
       </section>
       ${simulationPreview(result)}
       <section class="result-section">
@@ -1051,6 +1052,10 @@ function settingsPage() {
           <div class="inline-form"><input id="api-url" class="form-input" type="url" value="${escapeHtml(apiBase())}" required /><button class="button button-primary" type="submit">Save URL</button></div>
         </form>
       </div>
+      <div class="settings-section">
+        <div class="settings-heading"><span class="settings-icon">${icon("sparkles", 18)}</span><div><h2>AI code repair</h2><p id="ai-repair-status">Checking backend configuration…</p></div></div>
+        <p>AI repair uses a provider API key configured on the backend server. The key stays server-side; submitted source code, its goal, findings, and any preview test input or expected output are sent to the selected provider.</p>
+      </div>
       <div class="settings-section settings-danger">
         <div class="settings-heading"><span class="settings-icon">${icon("logout", 18)}</span><div><h2>Sign out</h2><p>End this session on this device.</p></div></div>
         <button class="button button-secondary" data-action="logout">Sign out</button>
@@ -1084,6 +1089,24 @@ function render() {
   else app.innerHTML = dashboardPage();
 
   if (route === "/history") loadHistory();
+  if (route === "/settings") loadAiRepairStatus();
+}
+
+async function loadAiRepairStatus() {
+  const statusElement = document.querySelector("#ai-repair-status");
+  if (!statusElement) return;
+  try {
+    const backendUrl = apiBase().replace(/\/+$/, "");
+    const response = await fetch(`${backendUrl}/api/health`);
+    if (!response.ok) throw new Error("Backend status unavailable");
+    const health = await response.json();
+    const ai = health.aiRepair;
+    statusElement.textContent = ai?.enabled
+      ? `AI repair is enabled (${ai.provider}).`
+      : "AI repair is not configured. Set a provider, model, and API key on the backend.";
+  } catch {
+    statusElement.textContent = "Could not read AI repair status from this backend.";
+  }
 }
 
 async function loadHistory() {
@@ -1216,8 +1239,8 @@ async function analyzeSource() {
   state.simulationInput = simulationInput;
   state.error = "";
   state.success = "";
-  if (programGoal.length < 3) {
-    showMessage("Describe what the program should do in at least 3 characters.");
+  if (programGoal && programGoal.length < 3) {
+    showMessage("If provided, the program goal must be at least 3 characters.");
     return;
   }
   if (programGoal.length > 2000) {
@@ -1351,18 +1374,7 @@ async function reanalyzeOriginal(button) {
   const result = state.lastResult;
   if (!result || !button) return;
 
-  let programGoal = result.programGoal || "";
-  if (!programGoal) {
-    const enteredGoal = window.prompt(
-      "Describe what this program should do before reanalyzing:",
-    );
-    if (enteredGoal === null) return;
-    programGoal = enteredGoal.trim();
-    if (programGoal.length < 3) {
-      showMessage("Describe the program goal in at least 3 characters.");
-      return;
-    }
-  }
+  const programGoal = result.programGoal || "";
 
   const soundContext = prepareFixSound();
   button.disabled = true;

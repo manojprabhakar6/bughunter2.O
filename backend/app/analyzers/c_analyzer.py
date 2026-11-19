@@ -148,19 +148,10 @@ def _analyze_c(
         )
     findings.extend(logic_findings)
 
-    if expected_output is None:
-        simulation = SimulationResult(
-            status="unsupported",
-            message=(
-                "C code is compiler-checked only unless an expected-output "
-                "test is enabled."
-            ),
-        )
-    elif result.returncode == 0 or candidate_compiled:
-        simulation = verify_expected_output(
-            sandbox_runner(corrected_code, simulation_input),
-            expected_output,
-        )
+    if result.returncode == 0 or candidate_compiled:
+        simulation = sandbox_runner(corrected_code, simulation_input)
+        if expected_output is not None:
+            simulation = verify_expected_output(simulation, expected_output)
     else:
         simulation = verify_expected_output(
             SimulationResult(

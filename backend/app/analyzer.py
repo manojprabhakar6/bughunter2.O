@@ -33,6 +33,7 @@ from app.analyzers.source_utils import (
     _source_offset,
 )
 from app.c_sandbox import simulate_c_sandbox
+from app.python_sandbox import simulate_python_sandbox
 from app.schemas import Finding, Language, SimulationResult
 from app.simulator import simulate_python, verify_expected_output
 
@@ -46,5 +47,7 @@ def analyze_code(
 ) -> AnalysisResult:
     return _dispatch_analysis(
         source, language, program_goal, simulation_input, expected_output,
-        compiler_locator=shutil.which, sandbox_runner=simulate_c_sandbox,
+        compiler_locator=shutil.which,
+        sandbox_runner=simulate_c_sandbox,
+        python_runner=simulate_python_sandbox,
     )
