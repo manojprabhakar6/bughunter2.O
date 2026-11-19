@@ -1,0 +1,22 @@
+[Unit]
+Description=Bug Hunter API
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=bughunter
+Group=bughunter
+SupplementaryGroups=docker
+WorkingDirectory=/opt/bug-hunter/backend
+Environment=PYTHONUNBUFFERED=1
+Environment=BUG_HUNTER_DATABASE=/var/lib/bug-hunter/bug_hunter.sqlite3
+ExecStart=/opt/bug-hunter/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000 --workers 1
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

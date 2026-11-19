@@ -4,7 +4,12 @@ const USER_STORAGE_KEY = "bh_email";
 const DEMO_STORAGE_KEY = "bh_demo";
 const RESULT_STORAGE_KEY = "bh_last_result";
 const NOTIFICATIONS_STORAGE_KEY = "bh_notifications";
-const DEFAULT_API_URL = "http://127.0.0.1:8000";
+const localHostname = ["127.0.0.1", "localhost", "bug-hunter.localhost"].includes(
+  window.location.hostname,
+);
+const DEFAULT_API_URL = localHostname
+  ? `http://${window.location.hostname === "bug-hunter.localhost" ? "127.0.0.1" : window.location.hostname}:8000`
+  : window.location.origin;
 const MAX_SOURCE_BYTES = 5_000_000;
 const MAX_HIGHLIGHT_SOURCE_CHARS = 200_000;
 const MAX_NOTIFICATIONS = 8;
