@@ -29,7 +29,6 @@ function routeHref(path) {
 }
 
 const icons = {
-  logo: '<path d="M12 3.5a6.5 6.5 0 0 0-6.5 6.5v3.5a6.5 6.5 0 0 0 13 0V10A6.5 6.5 0 0 0 12 3.5Z"/><path d="M8.5 3.8 7 2m8.5 1.8L17 2M5.5 9H3m16 0h-2.5M7 17l-2 2m12-2 2 2M9.5 10h.01M14.5 10h.01M9 14c1.7 1.4 4.3 1.4 6 0"/>',
   grid: '<rect x="3.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.5"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.5"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.5"/>',
   scan: '<path d="M8 4H5a1 1 0 0 0-1 1v3m12-4h3a1 1 0 0 1 1 1v3M4 16v3a1 1 0 0 0 1 1h3m12-4v3a1 1 0 0 1-1 1h-3"/><path d="M8 12h8"/>',
   clock: '<circle cx="12" cy="12" r="8.5"/><path d="M12 7v5l3.5 2"/>',
@@ -448,8 +447,7 @@ function authPage(isRegister) {
     <main class="auth-screen">
       <section class="auth-card">
         <a class="brand brand-auth" href="${routeHref("/login")}" data-link>
-          <span class="brand-mark">${icon("logo", 24)}</span>
-          <span class="brand-name">BUG HUNTER <b>2.0</b></span>
+          <img class="brand-artwork" src="./brand.svg?v=gold-brand-1" alt="Bug Hunter! Detect. Debug. Dominate." />
         </a>
         <div class="auth-heading">
           <h1>${title}</h1>
@@ -548,7 +546,7 @@ function shell(content, active) {
     <div class="app-shell">
       <header class="topbar">
         <a class="brand" href="${routeHref("/dashboard")}" data-link>
-          <span class="brand-mark">${icon("logo", 24)}</span>
+          <span class="brand-mark"><img src="./favicon.svg?v=gold-brand-1" alt="" /></span>
           <span class="brand-name">BUG HUNTER <b>2.0</b></span>
         </a>
         <div class="topbar-actions">

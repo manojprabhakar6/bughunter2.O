@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 480" role="img">
+  <title>Bug Hunter</title>
+  <desc>BH monogram with the Bug Hunter name and the Detect. Debug. Dominate. tagline.</desc>
+  <defs>
+    <linearGradient id="gold" x1="0" y1="0" x2="1" y2="0">
+      <stop stop-color="#38270d"/>
+      <stop offset=".52" stop-color="#8f6a24"/>
+      <stop offset="1" stop-color="#4a3512"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="150%">
+      <feDropShadow dx="3" dy="6" stdDeviation="3" flood-color="#78602d" flood-opacity=".22"/>
+    </filter>
+  </defs>
+  <rect width="512" height="480" fill="#f5f2eb"/>
+  <text x="256" y="292" fill="url(#gold)" filter="url(#shadow)" font-family="Georgia, 'Times New Roman', serif" font-size="230" font-weight="700" letter-spacing="-18" text-anchor="middle">BH</text>
+  <rect x="96" y="218" width="320" height="48" rx="8" fill="#e7e4dc"/>
+  <text x="256" y="248" fill="#403522" font-family="Arial, Helvetica, sans-serif" font-size="17" font-weight="500" letter-spacing="9" text-anchor="middle">BUG HUNTER!</text>
+  <text x="256" y="356" fill="#65532d" font-family="Arial, Helvetica, sans-serif" font-size="12" font-weight="600" letter-spacing="8" text-anchor="middle">DETECT. DEBUG. DOMINATE.</text>
+</svg>

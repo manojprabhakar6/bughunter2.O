@@ -1,13 +1,11 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
   <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-      <stop stop-color="#2877d9"/>
-      <stop offset="1" stop-color="#5750c8"/>
+    <linearGradient id="gold" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#6b4c19"/>
+      <stop offset="1" stop-color="#b18636"/>
     </linearGradient>
   </defs>
-  <rect width="40" height="40" rx="12" fill="url(#bg)"/>
-  <g fill="none" stroke="#fff" stroke-linecap="round" stroke-linejoin="round" stroke-width="2">
-    <path d="M20 9a9 9 0 0 0-9 9v4a9 9 0 0 0 18 0v-4a9 9 0 0 0-9-9ZM15 9l-2-3m12 3 2-3M11 17H7m26 0h-4M14 27l-3 3m15-3 3 3"/>
-    <path d="M17 18h.01M23 18h.01m-8 5a8 8 0 0 0 10 0"/>
-  </g>
+  <rect x="1" y="1" width="62" height="62" rx="16" fill="#f6f2e8" stroke="#d8c9a9" stroke-width="2"/>
+  <text x="32" y="43" fill="url(#gold)" font-family="Georgia, 'Times New Roman', serif" font-size="31" font-weight="700" letter-spacing="-3" text-anchor="middle">BH</text>
+  <path d="M8 47h48" stroke="#9e792f" stroke-width="2" opacity=".8"/>
 </svg>
