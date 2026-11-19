@@ -7,15 +7,26 @@ const NOTIFICATIONS_STORAGE_KEY = "bh_notifications";
 const localHostname = ["127.0.0.1", "localhost", "bug-hunter.localhost"].includes(
   window.location.hostname,
 );
+const isGithubPages = window.location.hostname === "manojprabhakar6.github.io";
 const DEFAULT_API_URL = localHostname
   ? `http://${window.location.hostname === "bug-hunter.localhost" ? "127.0.0.1" : window.location.hostname}:8000`
-  : window.location.hostname === "manojprabhakar6.github.io"
+  : isGithubPages
     ? "https://bughunter2-o.onrender.com"
     : window.location.origin;
 const MAX_SOURCE_BYTES = 5_000_000;
 const MAX_HIGHLIGHT_SOURCE_CHARS = 200_000;
 const MAX_NOTIFICATIONS = 8;
 const API_TIMEOUT_MS = 60_000;
+
+function currentRoute() {
+  if (!isGithubPages) return window.location.pathname;
+  const route = window.location.hash.slice(1);
+  return route.startsWith("/") ? route : "/login";
+}
+
+function routeHref(path) {
+  return isGithubPages ? `#${path}` : path;
+}
 
 const icons = {
   logo: '<path d="M12 3.5a6.5 6.5 0 0 0-6.5 6.5v3.5a6.5 6.5 0 0 0 13 0V10A6.5 6.5 0 0 0 12 3.5Z"/><path d="M8.5 3.8 7 2m8.5 1.8L17 2M5.5 9H3m16 0h-2.5M7 17l-2 2m12-2 2 2M9.5 10h.01M14.5 10h.01M9 14c1.7 1.4 4.3 1.4 6 0"/>',
@@ -41,7 +52,7 @@ const icons = {
 };
 
 const state = {
-  route: window.location.pathname,
+  route: currentRoute(),
   email: localStorage.getItem(USER_STORAGE_KEY) || "",
   isDemo: localStorage.getItem(DEMO_STORAGE_KEY) === "true",
   language: "python",
@@ -337,11 +348,12 @@ function initials(email) {
 }
 
 function navigate(path) {
-  state.route = path;
+  const route = isGithubPages && path.startsWith("#") ? path.slice(1) : path;
+  state.route = route;
   state.error = "";
   state.success = "";
   state.notificationsOpen = false;
-  window.history.pushState({}, "", path);
+  window.history.pushState({}, "", routeHref(route));
   window.scrollTo(0, 0);
   render();
 }
@@ -435,7 +447,7 @@ function authPage(isRegister) {
   return `
     <main class="auth-screen">
       <section class="auth-card">
-        <a class="brand brand-auth" href="/login" data-link>
+        <a class="brand brand-auth" href="${routeHref("/login")}" data-link>
           <span class="brand-mark">${icon("logo", 24)}</span>
           <span class="brand-name">BUG HUNTER <b>2.0</b></span>
         </a>
@@ -495,8 +507,8 @@ function authPage(isRegister) {
         </form>
         <p class="auth-switch">
           ${isRegister
-            ? 'Already have an account? <a class="text-link" href="/login" data-link>Sign in</a>'
-            : 'New to Bug Hunter? <a class="text-link" href="/register" data-link>Create account</a>'}
+            ? `Already have an account? <a class="text-link" href="${routeHref("/login")}" data-link>Sign in</a>`
+            : `New to Bug Hunter? <a class="text-link" href="${routeHref("/register")}" data-link>Create account</a>`}
         </p>
       </section>
       <p class="auth-footnote">Python uses a restricted preview; C output tests run only in the isolated sandbox.</p>
@@ -515,7 +527,7 @@ function sidebar(active) {
     <aside class="sidebar">
       <nav class="side-nav" aria-label="Main navigation">
         ${items.map(([id, label, href, glyph]) => `
-          <a class="nav-item ${active === id ? "active" : ""}" href="${href}" data-link>
+          <a class="nav-item ${active === id ? "active" : ""}" href="${routeHref(href)}" data-link>
             ${icon(glyph, 20)}
             <span>${label}</span>
           </a>
@@ -535,7 +547,7 @@ function shell(content, active) {
   return `
     <div class="app-shell">
       <header class="topbar">
-        <a class="brand" href="/dashboard" data-link>
+        <a class="brand" href="${routeHref("/dashboard")}" data-link>
           <span class="brand-mark">${icon("logo", 24)}</span>
           <span class="brand-name">BUG HUNTER <b>2.0</b></span>
         </a>
@@ -548,7 +560,7 @@ function shell(content, active) {
             ${notificationPanel()}
           </div>
           ${state.isDemo ? '<span class="demo-badge">DEMO</span>' : ""}
-          <button class="avatar" data-link href="/settings" aria-label="Account settings">${initials(email)}</button>
+          <button class="avatar" data-link href="${routeHref("/settings")}" aria-label="Account settings">${initials(email)}</button>
           <button class="icon-button logout-button" data-action="logout" aria-label="Sign out" title="Sign out">${icon("logout", 19)}</button>
         </div>
       </header>
@@ -604,8 +616,8 @@ function dashboardPage() {
         <h2>Analyze your code</h2>
         <p>Submit Python or C source to check for issues and review corrections, verification status, and a detailed comparison.</p>
         <div class="dashboard-actions">
-          <a class="button button-primary" href="/analyze" data-link>${icon("scan", 16)} Open code analyzer</a>
-          <a class="button button-secondary" href="/history" data-link>${icon("clock", 16)} View history</a>
+          <a class="button button-primary" href="${routeHref("/analyze")}" data-link>${icon("scan", 16)} Open code analyzer</a>
+          <a class="button button-secondary" href="${routeHref("/history")}" data-link>${icon("clock", 16)} View history</a>
         </div>
       </section>
       ${analysisOverview()}
@@ -867,16 +879,16 @@ function analysisPage() {
     return shell(`
       <div class="page-heading">
         <div><p class="eyebrow">ANALYSIS REPORT</p><h1>Detected issues</h1></div>
-        <a class="button button-secondary" href="/dashboard" data-link>Back to dashboard</a>
+        <a class="button button-secondary" href="${routeHref("/dashboard")}" data-link>Back to dashboard</a>
       </div>
-      <section class="panel empty-state"><span class="empty-state-icon">${icon("code", 27)}</span><h2>No analysis yet</h2><p>Submit Python or C code to see static analysis results.</p><a class="button button-primary" href="/analyze" data-link>Analyze code</a></section>
+      <section class="panel empty-state"><span class="empty-state-icon">${icon("code", 27)}</span><h2>No analysis yet</h2><p>Submit Python or C code to see static analysis results.</p><a class="button button-primary" href="${routeHref("/analyze")}" data-link>Analyze code</a></section>
     `, "analyze");
   }
 
   return shell(`
     <div class="page-heading">
       <div><p class="eyebrow">ANALYSIS REPORT</p><h1>Detected issues</h1></div>
-      <a class="button button-secondary" href="/dashboard" data-link>Back to dashboard</a>
+      <a class="button button-secondary" href="${routeHref("/dashboard")}" data-link>Back to dashboard</a>
     </div>
     <div id="page-message" class="notice" role="status" hidden></div>
     <section class="panel result-panel">
@@ -918,7 +930,7 @@ function historyPage() {
   return shell(`
     <div class="page-heading">
       <div><p class="eyebrow">YOUR WORKSPACE</p><h1>Analysis history</h1><p class="page-subtitle">Review your previous code submissions.</p></div>
-      <a class="button button-primary" href="/analyze" data-link>${icon("scan", 16)} Analyze code</a>
+      <a class="button button-primary" href="${routeHref("/analyze")}" data-link>${icon("scan", 16)} Analyze code</a>
     </div>
     <div id="page-message" class="notice" role="status" hidden></div>
     <section class="panel history-panel">
@@ -957,7 +969,7 @@ function settingsPage() {
 }
 
 function render() {
-  const route = window.location.pathname;
+  const route = currentRoute();
   state.route = route;
   const hasToken = Boolean(localStorage.getItem(TOKEN_STORAGE_KEY));
 
@@ -967,7 +979,7 @@ function render() {
   }
   if (route === "/login" || !hasToken) {
     if (route !== "/login") {
-      window.history.replaceState({}, "", "/login");
+      window.history.replaceState({}, "", routeHref("/login"));
       state.route = "/login";
     }
     app.innerHTML = authPage(false);
@@ -1281,7 +1293,7 @@ async function reanalyzeOriginal(button) {
     state.lastResult = updated;
     sessionStorage.setItem(RESULT_STORAGE_KEY, JSON.stringify(updated));
     recordAnalysisNotification(updated);
-    if (window.location.pathname === "/analysis") {
+    if (currentRoute() === "/analysis") {
       render();
       window.scrollTo(0, 0);
     }
@@ -1301,8 +1313,9 @@ app.addEventListener("click", async (event) => {
     event.preventDefault();
     const href = link.getAttribute("href");
     if (href) {
-      if (href === "/login" || href === "/register" || localStorage.getItem(TOKEN_STORAGE_KEY)) {
-        navigate(href);
+      const route = isGithubPages && href.startsWith("#") ? href.slice(1) : href;
+      if (route === "/login" || route === "/register" || localStorage.getItem(TOKEN_STORAGE_KEY)) {
+        navigate(route);
       }
     }
     return;
