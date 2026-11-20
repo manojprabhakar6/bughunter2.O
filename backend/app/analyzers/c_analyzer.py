@@ -92,6 +92,29 @@ def _analyze_c(
                     result = repaired_result
                     candidate_compiled = True
 
+        for _ in range(8):
+            if result.returncode != 0:
+                break
+            candidate = _repair_c_warning_diagnostic(corrected_code, result.stderr)
+            if candidate is None or candidate == corrected_code:
+                break
+            code_path.write_text(candidate, encoding="utf-8")
+            candidate_result = _run_c_compiler(compiler, code_path)
+            observed_findings.extend(_c_findings(candidate_result.stderr))
+            current_warnings = sum(
+                finding.code == "C_WARNING" for finding in _c_findings(result.stderr)
+            )
+            candidate_warnings = sum(
+                finding.code == "C_WARNING"
+                for finding in _c_findings(candidate_result.stderr)
+            )
+            if candidate_result.returncode == 0 and candidate_warnings < current_warnings:
+                corrected_code = candidate
+                result = candidate_result
+                candidate_compiled = True
+            else:
+                break
+
         if result.returncode == 0:
             candidate, proposed_logic_findings = _repair_c_goal_logic(
                 corrected_code,
@@ -280,6 +303,11 @@ def _repair_c_compiler_diagnostic(source: str, output: str) -> str | None:
         if not 0 <= line_index < len(lines):
             continue
 
+        if "end of input" in message:
+            candidate = _repair_missing_c_closing_braces(source)
+            if candidate is not None:
+                return candidate
+
         if "expected" in message and ";" in message and "before" in message:
             previous = line_index - 1
             while previous >= 0 and not lines[previous].strip():
@@ -346,11 +374,148 @@ def _repair_c_compiler_diagnostic(source: str, output: str) -> str | None:
                 and SequenceMatcher(None, unknown_name, name).ratio() >= 0.75
             ]
             if len(close_matches) != 1:
-                continue
-            replacement = close_matches[0]
+                unused_names = set(
+                    re.findall(r"unused variable ['‘](\w+)['’]", output)
+                )
+                if len(unused_names) != 1:
+                    continue
+                replacement = next(iter(unused_names))
+                if replacement not in declared_names:
+                    continue
+            else:
+                replacement = close_matches[0]
         start_offset = line_offsets[line_index] + start
         end_offset = start_offset + len(unknown_name)
         return source[:start_offset] + replacement + source[end_offset:]
+
+    return None
+
+
+def _unmatched_c_open_braces(source: str) -> list[tuple[int, int, int]]:
+    stack: list[tuple[int, int, int]] = []
+    state = "code"
+    escaped = False
+    index = 0
+    line_number = 1
+    line_start = 0
+    while index < len(source):
+        current = source[index]
+        following = source[index + 1] if index + 1 < len(source) else ""
+        if state == "line_comment":
+            if current in "\r\n":
+                state = "code"
+        elif state == "block_comment":
+            if current == "*" and following == "/":
+                state = "code"
+                index += 1
+        elif state in {"string", "character"}:
+            if escaped:
+                escaped = False
+            elif current == "\\":
+                escaped = True
+            elif (state == "string" and current == '"') or (
+                state == "character" and current == "'"
+            ):
+                state = "code"
+        elif current == "/" and following == "/":
+            state = "line_comment"
+            index += 1
+        elif current == "/" and following == "*":
+            state = "block_comment"
+            index += 1
+        elif current == '"':
+            state = "string"
+        elif current == "'":
+            state = "character"
+        elif current == "{":
+            line_prefix = source[line_start:index]
+            indent = len(line_prefix) - len(line_prefix.lstrip(" \t"))
+            stack.append((index, line_number, indent))
+        elif current == "}" and stack:
+            stack.pop()
+        if current == "\n":
+            line_number += 1
+            line_start = index + 1
+        index += 1
+    return stack
+
+
+def _repair_missing_c_closing_braces(source: str) -> str | None:
+    unmatched = _unmatched_c_open_braces(source)
+    if not unmatched:
+        return None
+
+    lines = source.splitlines(keepends=True)
+    offsets = [0]
+    for line in lines:
+        offsets.append(offsets[-1] + len(line))
+
+    for line_index, line in enumerate(lines):
+        return_line = re.match(r"^(?P<indent>[ \t]*)return\b", line)
+        if return_line is None:
+            continue
+        return_offset = offsets[line_index]
+        opens_before_return = _unmatched_c_open_braces(source[:return_offset])
+        if len(opens_before_return) < 2:
+            continue
+        _, _, opener_indent = opens_before_return[-1]
+        indent = return_line.group("indent")
+        if len(indent) > opener_indent:
+            continue
+        repaired = (
+            source[:return_offset]
+            + indent
+            + "}\n"
+            + source[return_offset:]
+        )
+        remaining = len(_unmatched_c_open_braces(repaired))
+        if remaining:
+            ending = "" if repaired.endswith(("\n", "\r")) else "\n"
+            repaired += ending + ("}" * remaining) + "\n"
+        return repaired
+
+    ending = "" if source.endswith(("\n", "\r")) else "\n"
+    return source + ending + ("}" * len(unmatched)) + "\n"
+
+
+def _repair_c_warning_diagnostic(source: str, output: str) -> str | None:
+    """Repair a small set of unambiguous type and condition warnings."""
+    lines = source.splitlines(keepends=True)
+    offsets = [0]
+    for line in lines:
+        offsets.append(offsets[-1] + len(line))
+
+    for output_line in output.splitlines():
+        diagnostic = C_DIAGNOSTIC.search(output_line)
+        if diagnostic is None or diagnostic.group("severity") != "warning":
+            continue
+        line_index = int(diagnostic.group("line")) - 1
+        if not 0 <= line_index < len(lines):
+            continue
+        line = lines[line_index]
+        message = diagnostic.group("message")
+
+        if "initialization makes integer from pointer" in message:
+            numeric_string = re.search(
+                r"\b(?:signed\s+|unsigned\s+)?(?:short\s+|long\s+long\s+|long\s+)?"
+                r"int\s+\w+\s*=\s*\"(?P<value>[+-]?\d+)\"",
+                line,
+            )
+            if numeric_string is not None:
+                start = offsets[line_index] + numeric_string.start("value") - 1
+                end = offsets[line_index] + numeric_string.end("value") + 1
+                return source[:start] + numeric_string["value"] + source[end:]
+
+        if "assignment used as truth value" in message or (
+            "suggest parentheses around assignment" in message
+        ):
+            assignment = re.search(
+                r"\bif\s*\(\s*(?P<name>[A-Za-z_]\w*)\s*=(?!=)",
+                line,
+            )
+            if assignment is not None:
+                offset = offsets[line_index] + assignment.end() - 1
+                return source[:offset] + "==" + source[offset + 1 :]
 
     return None
 
