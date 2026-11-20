@@ -1753,6 +1753,14 @@ async function start() {
       clearSession();
     }
   }
+  if (token && currentRoute() === "/analysis" && state.lastResult?.id) {
+    try {
+      state.lastResult = await api(`/api/submissions/${state.lastResult.id}`);
+      sessionStorage.setItem(RESULT_STORAGE_KEY, JSON.stringify(state.lastResult));
+    } catch {
+      // Keep the cached result visible if this saved report cannot be refreshed.
+    }
+  }
   render();
 }
 
