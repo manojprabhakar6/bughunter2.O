@@ -39,7 +39,9 @@ def _analyze_c(
         corrected_code = source
         observed_findings = _c_findings(initial_result.stderr)
 
-        for _ in range(8):
+        # A file may contain many independent syntax mistakes. Keep repairing
+        # compiler-confirmed issues with a hard cap for predictable latency.
+        for _ in range(32):
             if result.returncode == 0:
                 break
             candidate = _repair_c_compiler_diagnostic(corrected_code, result.stderr)
@@ -48,31 +50,33 @@ def _analyze_c(
             code_path.write_text(candidate, encoding="utf-8")
             candidate_result = _run_c_compiler(compiler, code_path)
             observed_findings.extend(_c_findings(candidate_result.stderr))
-            current_errors = sum(
-                finding.code in {"C_ERROR", "C_FATAL_ERROR"}
-                for finding in _c_findings(result.stderr)
-            )
-            candidate_errors = sum(
-                finding.code in {"C_ERROR", "C_FATAL_ERROR"}
-                for finding in _c_findings(candidate_result.stderr)
-            )
-            current_error_signatures = {
-                (finding.code, finding.message, finding.line, finding.column)
+            current_error_signatures = Counter(
+                (finding.code, finding.message)
                 for finding in _c_findings(result.stderr)
                 if finding.code in {"C_ERROR", "C_FATAL_ERROR"}
-            }
-            candidate_error_signatures = {
-                (finding.code, finding.message, finding.line, finding.column)
+            )
+            candidate_error_signatures = Counter(
+                (finding.code, finding.message)
                 for finding in _c_findings(candidate_result.stderr)
                 if finding.code in {"C_ERROR", "C_FATAL_ERROR"}
-            }
+            )
+            current_warnings = sum(
+                finding.code == "C_WARNING" for finding in _c_findings(result.stderr)
+            )
+            candidate_warnings = sum(
+                finding.code == "C_WARNING"
+                for finding in _c_findings(candidate_result.stderr)
+            )
+            # A successful repair can expose errors hidden behind the first
+            # parser failure, so accept it when the reported error changes or
+            # a warning was removed, even if GCC reports more errors next.
             if (
                 candidate_result.returncode == 0
-                or candidate_errors < current_errors
-                or (
-                    candidate_errors <= current_errors
-                    and candidate_error_signatures != current_error_signatures
+                or any(
+                    candidate_error_signatures[signature] < count
+                    for signature, count in current_error_signatures.items()
                 )
+                or candidate_warnings < current_warnings
             ):
                 corrected_code = candidate
                 result = candidate_result
@@ -92,7 +96,7 @@ def _analyze_c(
                     result = repaired_result
                     candidate_compiled = True
 
-        for _ in range(8):
+        for _ in range(16):
             if result.returncode != 0:
                 break
             candidate = _repair_c_warning_diagnostic(corrected_code, result.stderr)
@@ -348,6 +352,27 @@ def _repair_c_compiler_diagnostic(source: str, output: str) -> str | None:
             )
             return "".join(lines)
 
+        if (
+            "expected '}' before 'else'" in message
+            or 'expected "}" before "else"' in message
+        ):
+            line = lines[line_index]
+            else_match = re.search(r"\belse\b", line)
+            if else_match is not None:
+                indent = line[: len(line) - len(line.lstrip(" \t"))]
+                insertion = line_offsets[line_index] + else_match.start()
+                return source[:insertion] + "}\n" + indent + source[insertion:]
+
+        if "lvalue required as left operand of assignment" in message:
+            line = lines[line_index]
+            assignment = re.search(
+                r"(?P<left>[A-Za-z_]\w*(?:\s*\[[^\]]+\])?\s*%\s*\d+)\s*=(?!=)",
+                line,
+            )
+            if assignment is not None:
+                offset = line_offsets[line_index] + assignment.end() - 1
+                return source[:offset] + "==" + source[offset + 1 :]
+
         undeclared = re.search(r"['‘](\w+)['’].*undeclared", message)
         if undeclared is None:
             continue
@@ -494,6 +519,16 @@ def _repair_c_warning_diagnostic(source: str, output: str) -> str | None:
             continue
         line = lines[line_index]
         message = diagnostic.group("message")
+
+        if "format '%d' expects argument of type 'int *'" in message:
+            scanf_call = re.search(
+                r'scanf\s*\(\s*"(?:[^"\\]|\\.)*%d(?:[^"\\]|\\.)*"\s*,\s*(?P<name>[A-Za-z_]\w*)\s*\)',
+                line,
+            )
+            if scanf_call is not None:
+                start = offsets[line_index] + scanf_call.start("name")
+                end = offsets[line_index] + scanf_call.end("name")
+                return source[:start] + "&" + source[start:end] + source[end:]
 
         if "initialization makes integer from pointer" in message:
             numeric_string = re.search(
