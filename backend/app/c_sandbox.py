@@ -1,8 +1,8 @@
-import shutil
 import subprocess
 import tempfile
 from pathlib import Path
 
+from app.docker_utils import find_docker
 from app.schemas import SimulationResult
 
 MAX_C_OUTPUT_BYTES = 20_000
@@ -62,7 +62,7 @@ def _sandbox_command(docker: str, source_directory: Path) -> list[str]:
 
 
 def simulate_c_sandbox(source: str, simulation_input: str) -> SimulationResult:
-    docker = shutil.which("docker")
+    docker = find_docker()
     if docker is None:
         return SimulationResult(
             status="unsupported",

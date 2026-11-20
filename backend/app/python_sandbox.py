@@ -1,9 +1,9 @@
 """Run Python previews in a bounded, network-disabled Docker container."""
-import shutil
 import subprocess
 import tempfile
 from pathlib import Path
 
+from app.docker_utils import find_docker
 from app.schemas import SimulationResult
 from app.simulator import simulate_python
 
@@ -74,7 +74,7 @@ def _restricted_fallback(source: str, simulation_input: str) -> SimulationResult
 
 
 def simulate_python_sandbox(source: str, simulation_input: str) -> SimulationResult:
-    docker = shutil.which("docker")
+    docker = find_docker()
     if docker is None:
         return _restricted_fallback(source, simulation_input)
 
